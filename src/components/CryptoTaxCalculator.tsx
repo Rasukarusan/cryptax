@@ -69,6 +69,22 @@ const CryptoTaxCalculator = () => {
   const [editingPrice, setEditingPrice] = useState<string | null>(null);
   const [tempPrice, setTempPrice] = useState("");
   const [pricesLoaded, setPricesLoaded] = useState(false);
+  const [hasStoredData, setHasStoredData] = useState(false);
+  const [showStoredDataPrompt, setShowStoredDataPrompt] = useState(false);
+
+  // ローカルストレージのキー
+  const STORAGE_KEY = "crypto-tax-calculator-data";
+  const STORAGE_TIMESTAMP_KEY = "crypto-tax-calculator-timestamp";
+
+  // コンポーネントマウント時に保存データの存在をチェック
+  useEffect(() => {
+    const storedData = localStorage.getItem(STORAGE_KEY);
+    const storedTimestamp = localStorage.getItem(STORAGE_TIMESTAMP_KEY);
+    if (storedData && storedTimestamp) {
+      setHasStoredData(true);
+      setShowStoredDataPrompt(true);
+    }
+  }, []);
 
   // Binance APIから価格を取得
   const fetchBinancePrices = async () => {
@@ -77,7 +93,8 @@ const CryptoTaxCalculator = () => {
     try {
       // 通貨リストを取得（無効な値を除外）
       const currencies = Object.keys(data.currencyData).filter(
-        currency => currency && currency !== 'undefined' && currency !== 'null'
+        (currency) =>
+          currency && currency !== "undefined" && currency !== "null",
       );
 
       // BinanceとYahoo FinanceのAPIから価格を取得
@@ -149,7 +166,7 @@ const CryptoTaxCalculator = () => {
     csvData.forEach((row) => {
       const currency = row["通貨1"];
       const type = row["取引種別"];
-      
+
       // 無効な行をスキップ
       if (!currency || !type) {
         return;
@@ -162,7 +179,7 @@ const CryptoTaxCalculator = () => {
       const jpyAmount =
         parseFloat(String(row["通貨2数量"] || "0").replace(/,/g, "")) || 0;
       const date = new Date(row["取引日時"]);
-      
+
       // 期間の記録
       if (!isNaN(date.getTime())) {
         if (!startDate || date < startDate) {
@@ -317,7 +334,11 @@ const CryptoTaxCalculator = () => {
     });
     setCurrentPrices(initialPrices);
 
-    return { currencyData, totalDeposit, dateRange: { start: startDate, end: endDate } };
+    return {
+      currencyData,
+      totalDeposit,
+      dateRange: { start: startDate, end: endDate },
+    };
   };
 
   const handleFileUpload = useCallback(
@@ -327,6 +348,7 @@ const CryptoTaxCalculator = () => {
 
       setLoading(true);
       setFileName(file.name);
+      setShowStoredDataPrompt(false);
 
       Papa.parse(file, {
         header: true,
@@ -335,6 +357,18 @@ const CryptoTaxCalculator = () => {
           const processed = processCSVData(results.data);
           setData(processed);
           setLoading(false);
+
+          // ローカルストレージに保存
+          try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(results.data));
+            localStorage.setItem(
+              STORAGE_TIMESTAMP_KEY,
+              new Date().toISOString(),
+            );
+            localStorage.setItem("crypto-tax-calculator-filename", file.name);
+          } catch (e) {
+            console.error("Failed to save to localStorage:", e);
+          }
         },
         error: (error) => {
           console.error("CSV parse error:", error);
@@ -345,6 +379,47 @@ const CryptoTaxCalculator = () => {
     },
     [],
   );
+
+  // 前回のデータを読み込む関数
+  const loadStoredData = useCallback(() => {
+    try {
+      const storedData = localStorage.getItem(STORAGE_KEY);
+      const storedFileName = localStorage.getItem(
+        "crypto-tax-calculator-filename",
+      );
+      const storedTimestamp = localStorage.getItem(STORAGE_TIMESTAMP_KEY);
+
+      if (storedData) {
+        const parsedData = JSON.parse(storedData);
+        const processed = processCSVData(parsedData);
+        setData(processed);
+        setFileName(storedFileName || "前回のデータ");
+        setPricesLoaded(false);
+        setShowStoredDataPrompt(false);
+
+        if (storedTimestamp) {
+          const date = new Date(storedTimestamp);
+          console.log(
+            `前回のデータを読み込みました (${date.toLocaleString("ja-JP")})`,
+          );
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load from localStorage:", e);
+      alert("前回のデータの読み込みに失敗しました");
+    }
+  }, []);
+
+  // 保存データをクリアする関数
+  const clearStoredData = useCallback(() => {
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(STORAGE_TIMESTAMP_KEY);
+    localStorage.removeItem("crypto-tax-calculator-filename");
+    setHasStoredData(false);
+    setShowStoredDataPrompt(false);
+    // ページをリロード
+    window.location.reload();
+  }, []);
 
   // データ読み込み後、自動的に最新価格を取得
   useEffect(() => {
@@ -397,25 +472,31 @@ const CryptoTaxCalculator = () => {
       return sum + calculateUnrealizedPnL(currency, curr);
     }, 0);
   };
-  
+
   // 現在の総資産額を計算（現在価格での評価額）
   const calculateTotalAssets = () => {
     if (!data) return 0;
     return Object.entries(data.currencyData).reduce((sum, [currency, curr]) => {
       const currentPrice = currentPrices[currency] || 0;
-      return sum + (curr.currentHoldings * currentPrice);
+      return sum + curr.currentHoldings * currentPrice;
     }, 0);
   };
-  
+
   // 現在保有している日本円を計算
   const calculateCurrentCash = () => {
     if (!data) return 0;
     // 総入金額 + 売却収入 - 購入費用 - 手数料
-    const totalRevenue = Object.values(data.currencyData).reduce((sum, curr) => sum + curr.totalRevenue, 0);
-    const totalCost = Object.values(data.currencyData).reduce((sum, curr) => sum + curr.totalCost, 0);
+    const totalRevenue = Object.values(data.currencyData).reduce(
+      (sum, curr) => sum + curr.totalRevenue,
+      0,
+    );
+    const totalCost = Object.values(data.currencyData).reduce(
+      (sum, curr) => sum + curr.totalCost,
+      0,
+    );
     return data.totalDeposit + totalRevenue - totalCost;
   };
-  
+
   // 手数料の総合計を計算（円換算）
   const calculateTotalFees = () => {
     if (!data) return 0;
@@ -424,12 +505,12 @@ const CryptoTaxCalculator = () => {
       // 各取引の手数料を円換算して合計
       const feesInCrypto = curr.transactions.reduce((feeSum, t) => {
         // 買い・売りの場合は手数料は仮想通貨単位、外部送付の場合も仮想通貨単位
-        if (t.type === '買い' || t.type === '売り') {
+        if (t.type === "買い" || t.type === "売り") {
           // 買い・売りの手数料は既に取引価格に反映されているため、手数料×価格で計算
-          return feeSum + (t.fee * t.price);
-        } else if (t.type === '外部送付') {
+          return feeSum + t.fee * t.price;
+        } else if (t.type === "外部送付") {
           // 外部送付の手数料は現在価格で換算
-          return feeSum + (t.fee * currentPrice);
+          return feeSum + t.fee * currentPrice;
         }
         return feeSum;
       }, 0);
@@ -440,26 +521,26 @@ const CryptoTaxCalculator = () => {
   // 累進課税に基づく税額計算
   const calculateTax = (income: number) => {
     if (income <= 0) return 0;
-    
+
     // 税率テーブル
     const taxBrackets = [
       { min: 0, max: 1949000, rate: 0.05, deduction: 0 },
-      { min: 1950000, max: 3299000, rate: 0.10, deduction: 97500 },
-      { min: 3300000, max: 6949000, rate: 0.20, deduction: 427500 },
+      { min: 1950000, max: 3299000, rate: 0.1, deduction: 97500 },
+      { min: 3300000, max: 6949000, rate: 0.2, deduction: 427500 },
       { min: 6950000, max: 8999000, rate: 0.23, deduction: 636000 },
       { min: 9000000, max: 17999000, rate: 0.33, deduction: 1536000 },
-      { min: 18000000, max: 39999000, rate: 0.40, deduction: 2796000 },
+      { min: 18000000, max: 39999000, rate: 0.4, deduction: 2796000 },
       { min: 40000000, max: Infinity, rate: 0.45, deduction: 4796000 },
     ];
-    
+
     // 該当する税率区分を見つける
-    const bracket = taxBrackets.find(b => income >= b.min && income <= b.max);
+    const bracket = taxBrackets.find((b) => income >= b.min && income <= b.max);
     if (!bracket) return 0;
-    
+
     // 税額 = 所得 × 税率 - 控除額
     return income * bracket.rate - bracket.deduction;
   };
-  
+
   // 税率を取得（表示用）
   const getTaxRate = (income: number) => {
     if (income <= 0) return 0;
@@ -506,40 +587,104 @@ const CryptoTaxCalculator = () => {
           </p>
           {data && data.dateRange.start && data.dateRange.end && (
             <p className="text-gray-400 text-sm mt-1">
-              算出期間: {data.dateRange.start.toLocaleDateString('ja-JP')} 〜 {data.dateRange.end.toLocaleDateString('ja-JP')}
+              算出期間: {data.dateRange.start.toLocaleDateString("ja-JP")} 〜{" "}
+              {data.dateRange.end.toLocaleDateString("ja-JP")}
             </p>
           )}
         </div>
 
         {!data ? (
-          <div className="bg-white/10 backdrop-blur-md rounded-2xl p-12 text-center">
-            <label htmlFor="file-upload" className="cursor-pointer">
-              <div className="flex flex-col items-center space-y-4">
-                <Upload className="w-16 h-16 text-blue-400" />
-                <div>
-                  <p className="text-xl font-semibold text-white mb-2">
-                    CSVファイルをアップロード
-                  </p>
-                  <p className="text-gray-400 text-sm">
-                    クリックしてファイルを選択
-                  </p>
+          <div className="space-y-4">
+            {/* 前回のデータがある場合の通知 */}
+            {showStoredDataPrompt && hasStoredData && (
+              <div className="bg-blue-600/20 border border-blue-500/50 backdrop-blur-md rounded-xl p-6">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <p className="text-white font-semibold mb-2">
+                      前回のデータが保存されています
+                    </p>
+                    <p className="text-gray-300 text-sm mb-3">
+                      {(() => {
+                        const timestamp = localStorage.getItem(
+                          STORAGE_TIMESTAMP_KEY,
+                        );
+                        const filename = localStorage.getItem(
+                          "crypto-tax-calculator-filename",
+                        );
+                        if (timestamp) {
+                          const date = new Date(timestamp);
+                          return `${date.toLocaleDateString("ja-JP")} ${date.toLocaleTimeString("ja-JP")} に保存 ${filename ? `(${filename})` : ""}`;
+                        }
+                        return "";
+                      })()}
+                    </p>
+                    <div className="flex gap-3">
+                      <button
+                        onClick={loadStoredData}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors text-white font-medium"
+                      >
+                        前回のデータを使用
+                      </button>
+                      <button
+                        onClick={() => setShowStoredDataPrompt(false)}
+                        className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg transition-colors text-white"
+                      >
+                        新規アップロード
+                      </button>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setShowStoredDataPrompt(false)}
+                    className="ml-4 text-gray-400 hover:text-white transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
                 </div>
-                <input
-                  id="file-upload"
-                  type="file"
-                  accept=".csv"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                  disabled={loading}
-                />
-              </div>
-            </label>
-            {loading && (
-              <div className="mt-4">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto"></div>
-                <p className="text-white mt-2">処理中...</p>
               </div>
             )}
+
+            <div className="bg-white/10 backdrop-blur-md rounded-2xl p-12 text-center">
+              <label htmlFor="file-upload" className="cursor-pointer">
+                <div className="flex flex-col items-center space-y-4">
+                  <Upload className="w-16 h-16 text-blue-400" />
+                  <div>
+                    <p className="text-xl font-semibold text-white mb-2">
+                      CSVファイルをアップロード
+                    </p>
+                    <p className="text-gray-400 text-sm">
+                      クリックしてファイルを選択
+                    </p>
+                  </div>
+                  <input
+                    id="file-upload"
+                    type="file"
+                    accept=".csv"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                    disabled={loading}
+                  />
+                </div>
+              </label>
+
+              {/* 前回のデータを表示ボタン（通知を閉じた後用） */}
+              {hasStoredData && !showStoredDataPrompt && (
+                <div className="mt-6">
+                  <button
+                    onClick={loadStoredData}
+                    className="px-4 py-2 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/50 rounded-lg transition-colors text-white"
+                  >
+                    前回の内容を表示
+                  </button>
+                </div>
+              )}
+
+              {loading && (
+                <div className="mt-4">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto"></div>
+                  <p className="text-white mt-2">処理中...</p>
+                </div>
+              )}
+            </div>
           </div>
         ) : !pricesLoaded ? (
           <div className="bg-white/10 backdrop-blur-md rounded-2xl p-12 text-center">
@@ -550,10 +695,7 @@ const CryptoTaxCalculator = () => {
         ) : (
           <div className="space-y-6">
             {/* Binance価格取得ボタン */}
-            <div className="flex justify-between items-center">
-              <p className="text-gray-400 text-sm">
-                現在価格は手動で編集可能（価格をクリック）
-              </p>
+            <div className="flex justify-end items-center">
               <button
                 onClick={fetchBinancePrices}
                 className="flex items-center gap-2 px-4 py-2 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/50 rounded-lg transition-colors text-white"
@@ -583,9 +725,7 @@ const CryptoTaxCalculator = () => {
                 <p className="text-2xl font-bold text-cyan-400">
                   {formatCurrency(calculateCurrentCash())}
                 </p>
-                <p className="text-xs text-gray-400 mt-1">
-                  取引所内
-                </p>
+                <p className="text-xs text-gray-400 mt-1">取引所内</p>
               </div>
 
               <div className="bg-white/10 backdrop-blur-md rounded-xl p-6">
@@ -596,9 +736,7 @@ const CryptoTaxCalculator = () => {
                 <p className="text-2xl font-bold text-purple-400">
                   {formatCurrency(calculateTotalAssets())}
                 </p>
-                <p className="text-xs text-gray-400 mt-1">
-                  現在価格
-                </p>
+                <p className="text-xs text-gray-400 mt-1">現在価格</p>
               </div>
 
               <div className="bg-white/10 backdrop-blur-md rounded-xl p-6">
@@ -649,16 +787,22 @@ const CryptoTaxCalculator = () => {
               <div className="bg-white/10 backdrop-blur-md rounded-xl p-6">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-gray-300 text-sm">
-                    推定税額（{getTaxRate(calculateTotalPnL() + calculateTotalUnrealizedPnL())}%）
+                    推定税額（
+                    {getTaxRate(
+                      calculateTotalPnL() + calculateTotalUnrealizedPnL(),
+                    )}
+                    %）
                   </span>
                   <BarChart3 className="w-5 h-5 text-yellow-400" />
                 </div>
                 <p className="text-2xl font-bold text-yellow-400">
-                  {formatCurrency(calculateTax(calculateTotalPnL() + calculateTotalUnrealizedPnL()))}
+                  {formatCurrency(
+                    calculateTax(
+                      calculateTotalPnL() + calculateTotalUnrealizedPnL(),
+                    ),
+                  )}
                 </p>
-                <p className="text-xs text-gray-400 mt-1">
-                  累進課税適用
-                </p>
+                <p className="text-xs text-gray-400 mt-1">累進課税適用</p>
               </div>
             </div>
 
@@ -666,7 +810,9 @@ const CryptoTaxCalculator = () => {
             <div className="bg-gradient-to-r from-purple-600/20 to-blue-600/20 backdrop-blur-md rounded-xl p-6 border border-white/20">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-gray-300 mb-1">総合計損益（実現＋含み、手数料込）</p>
+                  <p className="text-gray-300 mb-1">
+                    総合計損益（実現＋含み、手数料込）
+                  </p>
                   <p
                     className={`text-3xl font-bold ${(calculateTotalPnL() + calculateTotalUnrealizedPnL()) >= 0 ? "text-green-400" : "text-red-400"}`}
                   >
@@ -678,7 +824,9 @@ const CryptoTaxCalculator = () => {
                 <div className="text-right">
                   <p className="text-gray-400 text-sm mb-1">総資産額</p>
                   <p className="text-2xl font-bold text-white mb-2">
-                    {formatCurrency(calculateCurrentCash() + calculateTotalAssets())}
+                    {formatCurrency(
+                      calculateCurrentCash() + calculateTotalAssets(),
+                    )}
                   </p>
                   <p className="text-gray-400 text-sm">損益内訳</p>
                   <p className="text-white text-sm">
@@ -854,7 +1002,7 @@ const CryptoTaxCalculator = () => {
                           </tr>
                         );
                       })}
-                    
+
                     {/* 日本円行 */}
                     <tr className="border-b border-white/5 hover:bg-white/5 transition-colors bg-white/5">
                       <td className="px-6 py-4">
@@ -889,11 +1037,13 @@ const CryptoTaxCalculator = () => {
                         <span className="text-gray-300">-</span>
                       </td>
                     </tr>
-                    
+
                     {/* 合計行 */}
                     <tr className="border-t-2 border-white/20 bg-gradient-to-r from-purple-600/10 to-blue-600/10">
                       <td className="px-6 py-4">
-                        <span className="font-bold text-white text-lg">合計</span>
+                        <span className="font-bold text-white text-lg">
+                          合計
+                        </span>
                       </td>
                       <td className="px-6 py-4">
                         <span className="text-gray-400">-</span>
@@ -903,11 +1053,11 @@ const CryptoTaxCalculator = () => {
                       </td>
                       <td className="px-6 py-4">
                         <div>
-                          <p className="text-white font-bold">
-                            総資産額
-                          </p>
+                          <p className="text-white font-bold">総資産額</p>
                           <p className="text-xl font-bold text-purple-400">
-                            {formatCurrency(calculateCurrentCash() + calculateTotalAssets())}
+                            {formatCurrency(
+                              calculateCurrentCash() + calculateTotalAssets(),
+                            )}
                           </p>
                         </div>
                       </td>
@@ -920,7 +1070,9 @@ const CryptoTaxCalculator = () => {
                       <td className="px-6 py-4">
                         <div>
                           <p className="text-gray-400 text-xs">実現損益</p>
-                          <p className={`font-bold ${calculateTotalPnL() >= 0 ? "text-green-400" : "text-red-400"}`}>
+                          <p
+                            className={`font-bold ${calculateTotalPnL() >= 0 ? "text-green-400" : "text-red-400"}`}
+                          >
                             {formatCurrency(calculateTotalPnL())}
                           </p>
                         </div>
@@ -928,7 +1080,9 @@ const CryptoTaxCalculator = () => {
                       <td className="px-6 py-4">
                         <div>
                           <p className="text-gray-400 text-xs">含み損益</p>
-                          <p className={`font-bold ${calculateTotalUnrealizedPnL() >= 0 ? "text-blue-400" : "text-orange-400"}`}>
+                          <p
+                            className={`font-bold ${calculateTotalUnrealizedPnL() >= 0 ? "text-blue-400" : "text-orange-400"}`}
+                          >
                             {formatCurrency(calculateTotalUnrealizedPnL())}
                           </p>
                         </div>
@@ -943,21 +1097,33 @@ const CryptoTaxCalculator = () => {
             <div className="text-center text-gray-400 text-sm space-y-2">
               <p>アップロードファイル: {fileName}</p>
               {data.dateRange.start && data.dateRange.end && (
-                <p>算出期間: {data.dateRange.start.toLocaleDateString('ja-JP')} 〜 {data.dateRange.end.toLocaleDateString('ja-JP')}</p>
+                <p>
+                  算出期間: {data.dateRange.start.toLocaleDateString("ja-JP")}{" "}
+                  〜 {data.dateRange.end.toLocaleDateString("ja-JP")}
+                </p>
               )}
               <p className="text-xs">
                 ※現在価格は手動で編集してください（価格をクリック）
               </p>
-              <button
-                onClick={() => {
-                  setData(null);
-                  setFileName("");
-                  setCurrentPrices({});
-                }}
-                className="mt-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg transition-colors text-white"
-              >
-                新しいファイルをアップロード
-              </button>
+              <div className="flex justify-center gap-3 mt-2">
+                <button
+                  onClick={() => {
+                    setData(null);
+                    setFileName("");
+                    setCurrentPrices({});
+                    setShowStoredDataPrompt(hasStoredData);
+                  }}
+                  className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg transition-colors text-white"
+                >
+                  新しいファイルをアップロード
+                </button>
+                <button
+                  onClick={clearStoredData}
+                  className="px-4 py-2 bg-red-600/20 hover:bg-red-600/30 border border-red-500/50 rounded-lg transition-colors text-white"
+                >
+                  保存データをクリア
+                </button>
+              </div>
             </div>
           </div>
         )}

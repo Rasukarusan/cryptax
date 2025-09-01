@@ -86,6 +86,10 @@ const CryptoTaxCalculator = () => {
 
       const binanceData = await binanceResponse.json();
       const usdData = await usdResponse.json();
+      
+      // デバッグ情報を出力
+      console.log("Binance API response:", binanceData);
+      console.log("USD/JPY API response:", usdData);
 
       const newPrices: Record<string, number> = {};
 

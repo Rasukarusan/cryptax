@@ -75,8 +75,10 @@ const CryptoTaxCalculator = () => {
     if (!data) return;
 
     try {
-      // 通貨リストを取得
-      const currencies = Object.keys(data.currencyData);
+      // 通貨リストを取得（無効な値を除外）
+      const currencies = Object.keys(data.currencyData).filter(
+        currency => currency && currency !== 'undefined' && currency !== 'null'
+      );
 
       // BinanceとYahoo FinanceのAPIから価格を取得
       const [binanceResponse, usdResponse] = await Promise.all([
@@ -86,10 +88,6 @@ const CryptoTaxCalculator = () => {
 
       const binanceData = await binanceResponse.json();
       const usdData = await usdResponse.json();
-      
-      // デバッグ情報を出力
-      console.log("Binance API response:", binanceData);
-      console.log("USD/JPY API response:", usdData);
 
       const newPrices: Record<string, number> = {};
 
@@ -151,6 +149,11 @@ const CryptoTaxCalculator = () => {
     csvData.forEach((row) => {
       const currency = row["通貨1"];
       const type = row["取引種別"];
+      
+      // 無効な行をスキップ
+      if (!currency || !type) {
+        return;
+      }
       const amount =
         parseFloat(String(row["通貨1数量"] || "0").replace(/,/g, "")) || 0;
       const price =

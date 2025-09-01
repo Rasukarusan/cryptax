@@ -10,7 +10,6 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const symbolsParam = searchParams.get("symbols");
     
-    console.log("Binance API called with symbols:", symbolsParam);
     
     if (!symbolsParam) {
       return NextResponse.json({ 
@@ -37,15 +36,12 @@ export async function GET(request: NextRequest) {
     for (const symbol of symbols) {
       try {
         const url = `${ENDPOINT}/ticker/price?symbol=${symbol.trim()}USDT`;
-        console.log(`Fetching price for ${symbol} from: ${url}`);
-        
         const res = await fetch(url);
         
         if (res.ok) {
           const data = await res.json();
           if (data.price) {
             prices[symbol] = parseFloat(data.price);
-            console.log(`${symbol}: ${data.price}`);
           }
         } else {
           const errorText = await res.text();
@@ -60,12 +56,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ 
       result: true, 
-      prices,
-      debug: {
-        requestedSymbols: symbols,
-        successCount: Object.keys(prices).length,
-        errors: errors.length > 0 ? errors : undefined
-      }
+      prices
     });
   } catch (e) {
     console.error("Binance API error:", e);

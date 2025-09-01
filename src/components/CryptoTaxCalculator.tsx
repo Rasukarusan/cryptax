@@ -121,21 +121,14 @@ const CryptoTaxCalculator = () => {
           const usdPrice = binanceData.prices[currency];
           if (usdPrice) {
             newPrices[currency] = usdPrice * usdToJpy;
-            console.log(
-              `${currency}: $${usdPrice} × ¥${usdToJpy} = ¥${(usdPrice * usdToJpy).toLocaleString()}`,
-            );
           } else if (currData.lastPrice > 0) {
             // APIから取得できない場合は最後の取引価格を使用
             newPrices[currency] = currData.lastPrice;
-            console.log(
-              `${currency}: 最後の取引価格 ¥${currData.lastPrice.toLocaleString()}`,
-            );
           }
         });
 
         setCurrentPrices(newPrices);
         setPricesLoaded(true);
-        console.log("現在価格を更新しました");
       } else {
         // APIエラーの場合は最後の取引価格を使用
         const fallbackPrices: Record<string, number> = {};
@@ -146,13 +139,9 @@ const CryptoTaxCalculator = () => {
         });
         setCurrentPrices(fallbackPrices);
         setPricesLoaded(true);
-        console.warn(
-          "価格の取得に失敗しました。最後の取引価格を表示しています。",
-        );
       }
     } catch (error) {
       console.error("価格取得エラー:", error);
-      console.warn("価格の取得に失敗しました。手動で価格を入力してください。");
       setPricesLoaded(true);
     }
   };
@@ -399,9 +388,6 @@ const CryptoTaxCalculator = () => {
 
         if (storedTimestamp) {
           const date = new Date(storedTimestamp);
-          console.log(
-            `前回のデータを読み込みました (${date.toLocaleString("ja-JP")})`,
-          );
         }
       }
     } catch (e) {
@@ -555,11 +541,12 @@ const CryptoTaxCalculator = () => {
 
   const startEditPrice = (currency: string) => {
     setEditingPrice(currency);
-    setTempPrice(currentPrices[currency]?.toString() || "");
+    const price = currentPrices[currency] || 0;
+    setTempPrice(Math.round(price).toString());
   };
 
   const savePrice = (currency: string) => {
-    const newPrice = parseFloat(tempPrice) || 0;
+    const newPrice = Math.round(parseFloat(tempPrice)) || 0;
     setCurrentPrices((prev) => ({
       ...prev,
       [currency]: newPrice,
@@ -946,25 +933,32 @@ const CryptoTaxCalculator = () => {
                             </td>
                             <td className="px-6 py-4">
                               {editingPrice === currency ? (
-                                <div className="flex items-center gap-1">
+                                <div className="flex items-center gap-2">
                                   <input
-                                    type="number"
+                                    type="text"
                                     value={tempPrice}
                                     onChange={(e) =>
                                       setTempPrice(e.target.value)
                                     }
-                                    className="w-24 px-2 py-1 bg-white/10 border border-white/20 rounded text-white text-sm"
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        savePrice(currency);
+                                      } else if (e.key === 'Escape') {
+                                        cancelEdit();
+                                      }
+                                    }}
+                                    className="w-32 px-3 py-2 bg-gray-900 border-2 border-blue-500 rounded-lg text-white text-base focus:outline-none focus:border-blue-400"
                                     autoFocus
                                   />
                                   <button
                                     onClick={() => savePrice(currency)}
-                                    className="p-1 hover:bg-green-500/20 rounded"
+                                    className="p-2 bg-green-500/20 hover:bg-green-500/30 rounded-lg transition-colors"
                                   >
-                                    <Check className="w-4 h-4 text-green-400" />
+                                    <Check className="w-5 h-5 text-green-400" />
                                   </button>
                                   <button
                                     onClick={cancelEdit}
-                                    className="p-1 hover:bg-red-500/20 rounded"
+                                    className="p-2 bg-red-500/20 hover:bg-red-500/30 rounded-lg transition-colors"
                                   >
                                     <X className="w-4 h-4 text-red-400" />
                                   </button>

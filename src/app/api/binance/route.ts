@@ -9,23 +9,22 @@ export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const symbolsParam = searchParams.get("symbols");
-    
-    
+
     if (!symbolsParam) {
-      return NextResponse.json({ 
-        result: false, 
+      return NextResponse.json({
+        result: false,
         error: "No symbols provided",
-        prices: {} 
+        prices: {},
       });
     }
-    
-    const symbols = symbolsParam.split(",").filter(s => s.trim());
-    
+
+    const symbols = symbolsParam.split(",").filter((s) => s.trim());
+
     if (!symbols.length) {
-      return NextResponse.json({ 
-        result: false, 
+      return NextResponse.json({
+        result: false,
         error: "No valid symbols",
-        prices: {} 
+        prices: {},
       });
     }
 
@@ -37,7 +36,7 @@ export async function GET(request: NextRequest) {
       try {
         const url = `${ENDPOINT}/ticker/price?symbol=${symbol.trim()}USDT`;
         const res = await fetch(url);
-        
+
         if (res.ok) {
           const data = await res.json();
           if (data.price) {
@@ -45,7 +44,9 @@ export async function GET(request: NextRequest) {
           }
         } else {
           const errorText = await res.text();
-          console.error(`Failed to fetch ${symbol}: ${res.status} - ${errorText}`);
+          console.error(
+            `Failed to fetch ${symbol}: ${res.status} - ${errorText}`,
+          );
           errors.push(`${symbol}: ${res.status}`);
         }
       } catch (e) {
@@ -54,16 +55,16 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ 
-      result: true, 
-      prices
+    return NextResponse.json({
+      result: true,
+      prices,
     });
   } catch (e) {
     console.error("Binance API error:", e);
-    return NextResponse.json({ 
+    return NextResponse.json({
       result: false,
       error: String(e),
-      prices: {}
+      prices: {},
     });
   }
 }

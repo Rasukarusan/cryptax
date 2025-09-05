@@ -5,8 +5,11 @@ import {
   ArrowUpCircle,
   BarChart3,
   Check,
+  Copy,
   DollarSign,
+  Download,
   Edit2,
+  FileText,
   RefreshCw,
   TrendingDown,
   TrendingUp,
@@ -17,6 +20,7 @@ import {
 import Papa from "papaparse";
 import type React from "react";
 import { useCallback, useEffect, useState } from "react";
+import { generateJapaneseTaxReportPDF } from "@/utils/taxReportPDFGenerator";
 
 interface Transaction {
   date: Date;
@@ -71,6 +75,7 @@ const CryptoTaxCalculator = () => {
   const [pricesLoaded, setPricesLoaded] = useState(false);
   const [hasStoredData, setHasStoredData] = useState(false);
   const [showStoredDataPrompt, setShowStoredDataPrompt] = useState(false);
+  const [copySuccess, setCopySuccess] = useState(false);
 
   // ローカルストレージのキー
   const STORAGE_KEY = "crypto-tax-calculator-data";
@@ -559,6 +564,36 @@ const CryptoTaxCalculator = () => {
     setTempPrice("");
   };
 
+  // テーブルデータをクリップボードにコピー
+  const copyTableToClipboard = () => {
+    if (!data) return;
+
+    let tableText = "通貨\t購入量\t売却量\t保有量\t平均取得価格\t現在価格\t実現損益\t含み損益\t手数料\n";
+    
+    Object.entries(data.currencyData).forEach(([currency, currencyData]) => {
+      if (currency === "JPY") return;
+      
+      const currentPrice = currentPrices[currency] || 0;
+      const currentValue = currencyData.currentHoldings * currentPrice;
+      const unrealizedPnL = currentValue - currencyData.currentCost;
+      
+      tableText += `${currency}\t`;
+      tableText += `${currencyData.totalBought.toFixed(6)}\t`;
+      tableText += `${currencyData.totalSold.toFixed(6)}\t`;
+      tableText += `${currencyData.currentHoldings.toFixed(6)}\t`;
+      tableText += `${Math.floor(currencyData.averagePrice)}\t`;
+      tableText += `${Math.floor(currentPrice)}\t`;
+      tableText += `${Math.floor(currencyData.realizedPnL)}\t`;
+      tableText += `${Math.floor(unrealizedPnL)}\t`;
+      tableText += `${Math.floor(currencyData.transactions.reduce((sum, tx) => sum + tx.fee, 0))}\n`;
+    });
+
+    navigator.clipboard.writeText(tableText).then(() => {
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+    });
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900 p-4">
       <div className="max-w-7xl mx-auto">
@@ -831,14 +866,46 @@ const CryptoTaxCalculator = () => {
 
             {/* 通貨別詳細 */}
             <div className="bg-white/10 backdrop-blur-md rounded-2xl overflow-hidden">
-              <div className="px-6 py-4 bg-white/5">
-                <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                  <Wallet className="w-5 h-5" />
-                  通貨別詳細（LIFO法）
-                </h2>
-                <p className="text-gray-400 text-sm mt-1">
-                  現在価格は自動取得または手動編集可能
-                </p>
+              <div className="px-6 py-4 bg-white/5 flex items-start justify-between">
+                <div>
+                  <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                    <Wallet className="w-5 h-5" />
+                    通貨別詳細（LIFO法）
+                  </h2>
+                  <p className="text-gray-400 text-sm mt-1">
+                    現在価格は自動取得または手動編集可能
+                  </p>
+                </div>
+                {/* エクスポートボタン */}
+                <div className="flex gap-1">
+                  <button
+                    onClick={async () => {
+                      const year = new Date().getFullYear();
+                      await generateJapaneseTaxReportPDF(data, year, "移動平均法");
+                    }}
+                    className="group relative p-2 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/50 rounded-lg transition-colors"
+                    title="PDF形式でダウンロード"
+                  >
+                    <FileText className="w-4 h-4 text-purple-400" />
+                    <span className="absolute -bottom-8 left-1/2 transform -translate-x-1/2 opacity-0 group-hover:opacity-100 bg-gray-900 text-white text-xs py-1 px-2 rounded whitespace-nowrap transition-opacity z-10">
+                      PDF出力
+                    </span>
+                  </button>
+                  <button
+                    onClick={copyTableToClipboard}
+                    className="group relative p-2 bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/50 rounded-lg transition-colors"
+                    title="テーブルをコピー"
+                  >
+                    {copySuccess ? (
+                      <Check className="w-4 h-4 text-cyan-400" />
+                    ) : (
+                      <Copy className="w-4 h-4 text-cyan-400" />
+                    )}
+                    <span className="absolute -bottom-8 left-1/2 transform -translate-x-1/2 opacity-0 group-hover:opacity-100 bg-gray-900 text-white text-xs py-1 px-2 rounded whitespace-nowrap transition-opacity z-10">
+                      {copySuccess ? "コピー済" : "表をコピー"}
+                    </span>
+                  </button>
+                </div>
               </div>
 
               <div className="overflow-x-auto">
